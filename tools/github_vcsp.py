@@ -271,14 +271,90 @@ class GithubVCSP(VCSPInterface):
             if not prs.totalCount:
                 raise Exception(f"No pull request found for commit {commit} in {repo_name}")
             pr = prs[0]
-            print(f"Posting comment on {file_path} at position {line} in commit {commit}")
-            if file_path != "":                
-                pr.create_review_comment(comment, commit_obj, file_path, line)
-            else:
-                pr.create_issue_comment(comment, commit_obj)
+            
+            # If file_path is empty, create issue comment
+            if file_path == "":
+                pr.create_issue_comment(comment)
+                return True
+            
+            # For inline comments, we need to find the correct line number in the PR diff
+            # The line number from LLM might not match the actual file due to diff context
+            # Let's get the PR file to find the correct line
+            actual_line = line
+            try:
+                # Get the PR files to find the file we're commenting on
+                pr_files = pr.get_files()
+                target_file = None
+                for pf in pr_files:
+                    if pf.filename == file_path:
+                        target_file = pf
+                        break
+                
+                if target_file and target_file.patch:
+                    # Find the closest changed line in the diff to the requested line
+                    # Parse the diff to find actual changed lines
+                    changed_lines = set()
+                    line_num_new = None
+                    for diff_line in target_file.patch.splitlines():
+                        if diff_line.startswith('@@'):
+                            try:
+                                match = re.search(r'\+(\d+)', diff_line)
+                                if match:
+                                    line_num_new = int(match.group(1)) - 1
+                            except Exception:
+                                pass
+                        elif diff_line.startswith('+') and not diff_line.startswith('+++'):
+                            if line_num_new is not None:
+                                line_num_new += 1
+                                changed_lines.add(line_num_new)
+                        elif not diff_line.startswith('-'):
+                            if line_num_new is not None:
+                                line_num_new += 1
+                    
+                    # Find the closest changed line to the requested line
+                    if changed_lines:
+                        # If the requested line is a changed line, use it
+                        if line in changed_lines:
+                            actual_line = line
+                        else:
+                            # Find the closest changed line
+                            closest = min(changed_lines, key=lambda x: abs(x - line))
+                            actual_line = closest
+                            logger.debug(f"Line {line} not found in diff, using closest changed line {actual_line}")
+                else:
+                    # If file not found in PR or no patch, try using the original line
+                    logger.warning(f"File {file_path} not found in PR diff or has no changes, using line {line}")
+            except Exception as e:
+                logger.warning(f"Could not determine correct line number: {str(e)}, using line {line}")
+            
+            print(f"Posting comment on {file_path} at position {actual_line} in commit {commit}")
+            pr.create_review_comment(comment, commit_obj, file_path, actual_line)
             return True
         except GithubException as e:
             error_msg = str(e)
+            # Check for 422 validation errors (line number issues)
+            if "422" in error_msg or "Validation Failed" in error_msg or "could not be resolved" in error_msg:
+                detailed_msg = (
+                    f"Failed to create GitHub review comment: {error_msg}\n"
+                    f"This error typically means the line number ({line}) doesn't exist in the file at the specified commit.\n"
+                    f"The line number might be from the diff context and not match the actual file.\n"
+                    f"Trying to use the closest changed line from the PR diff."
+                )
+                logger.error(detailed_msg)
+                # Try creating a general comment on the PR instead
+                try:
+                    repo = self.client.get_repo(repo_name)
+                    commit_obj = repo.get_commit(commit)
+                    prs = commit_obj.get_pulls()
+                    if prs.totalCount > 0:
+                        pr = prs[0]
+                        fallback_comment = f"**AI Comment on {file_path} (near line {line}):**\n\n{comment}"
+                        pr.create_issue_comment(fallback_comment)
+                        logger.info(f"Created fallback issue comment instead of inline comment")
+                        return True
+                except Exception as fallback_error:
+                    logger.warning(f"Failed to create fallback comment: {str(fallback_error)}")
+                raise Exception(detailed_msg)
             # Check for 403 permission errors
             if "403" in error_msg or "Forbidden" in error_msg or "Resource not accessible" in error_msg:
                 detailed_msg = (
