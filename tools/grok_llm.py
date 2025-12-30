@@ -5,14 +5,14 @@ from llm_interface import LLMInterface, ModelResult
 from config import LOG_CHAR_LIMIT
 
 class GrokLLM(LLMInterface):
-    def __init__(self):
+    def __init__(self, model: str = None):
         api_key = os.getenv("XAI_API_KEY")
         if not api_key:
             raise ValueError("XAI_API_KEY environment variable is required for Grok")
         self.api_key = api_key
         self.base_url = "https://api.x.ai/v1"
         self.endpoint = "/chat/completions"
-        self.model = os.getenv("GROK_MODEL", "grok-3-mini")
+        self.model = model or os.getenv("GROK_MODEL", "grok-3-mini")
         self.headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}"
