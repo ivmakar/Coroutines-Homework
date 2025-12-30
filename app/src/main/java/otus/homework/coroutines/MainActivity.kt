@@ -15,7 +15,6 @@ class MainActivity : AppCompatActivity() {
     private val viewModel by viewModels<CatsViewModel>()
 
     private lateinit var button: Button
-    private lateinit var textView: TextView
     private lateinit var imgView: ImageView
 
     override fun onCreate(savedInstanceState: Bundle?) {
