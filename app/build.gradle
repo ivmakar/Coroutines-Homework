@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    namespace = "otus.homework.coroutines"
     compileSdkVersion 33
     buildToolsVersion "30.0.3"
 
