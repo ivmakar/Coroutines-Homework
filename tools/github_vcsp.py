@@ -278,7 +278,18 @@ class GithubVCSP(VCSPInterface):
                 pr.create_issue_comment(comment, commit_obj)
             return True
         except GithubException as e:
-            raise Exception(f"Failed to create GitHub review comment: {str(e)}")
+            error_msg = str(e)
+            # Check for 403 permission errors
+            if "403" in error_msg or "Forbidden" in error_msg or "Resource not accessible" in error_msg:
+                detailed_msg = (
+                    f"Failed to create GitHub review comment: {error_msg}\n"
+                    f"This error typically means the GITHUB_TOKEN doesn't have sufficient permissions.\n"
+                    f"For GitHub Actions workflows, use the built-in GITHUB_TOKEN which has automatic permissions.\n"
+                    f"For Personal Access Tokens, ensure the token has 'repo' scope (or 'public_repo' for public repositories).\n"
+                    f"Token permissions can be checked/updated at: https://github.com/settings/tokens"
+                )
+                raise Exception(detailed_msg)
+            raise Exception(f"Failed to create GitHub review comment: {error_msg}")
 
     def get_commit(self, repo_name: str, commit_sha: str):
         """Retrieve a commit by its SHA from a GitHub repository."""

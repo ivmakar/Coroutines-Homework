@@ -28,7 +28,7 @@ jobs:
 
       - name: Run AI Code Review comments
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python tools/review.py ${{ github.repository }} ${{ github.event.pull_request.number }} --mode comments --llm gemini --model "gemini-2.5-pro" --debug
