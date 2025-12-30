@@ -1,7 +1,66 @@
 import os
+import re
+import logging
+from datetime import datetime
 from github import Github
 from vcsp_interface import PR, Commit, PRFile, VCSPInterface
 from github import Github, GithubException
+from collections import defaultdict
+
+logger = logging.getLogger(__name__)
+
+
+def _parse_diff_per_file(diff_text):
+    """Parse diff text into PRFile objects with changed lines."""
+    try:
+        files = []
+        current_file = None
+        current_diff = []
+        changed_lines = set()
+        line_num_new = None
+
+        for line in diff_text.splitlines(keepends=False):
+            if line.startswith('diff --git') or line.startswith('---') and '/dev/null' in line:
+                if current_file and current_diff:
+                    files.append(PRFile(current_file, '\n'.join(current_diff), changed_lines))
+                current_diff = [line]
+                changed_lines = set()
+                line_num_new = None
+                # Try to extract filename from diff header or next lines
+                if line.startswith('diff --git'):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        current_file = parts[2].replace('a/', '')
+            elif line.startswith('+++'):
+                # Extract filename from +++ line
+                if '/dev/null' not in line:
+                    current_file = line.replace('+++ b/', '').replace('+++ ', '').strip()
+            elif current_file:
+                current_diff.append(line)
+                if line.startswith('@@'):
+                    try:
+                        match = re.search(r'\+(\d+)', line)
+                        if match:
+                            line_num_new = int(match.group(1)) - 1
+                    except Exception as e:
+                        logger.warning("Failed to parse hunk header: %s", line)
+                elif line.startswith('+') and not line.startswith('+++'):
+                    if line_num_new is not None:
+                        line_num_new += 1
+                        changed_lines.add(line_num_new)
+                elif not line.startswith('-'):
+                    if line_num_new is not None:
+                        line_num_new += 1
+
+        if current_file and current_diff:
+            files.append(PRFile(current_file, '\n'.join(current_diff), changed_lines))
+
+        return files
+
+    except Exception as e:
+        logger.error("Failed to parse diff text: %s", e)
+        return []
+
 
 class GithubVCSP(VCSPInterface):
     def __init__(self):
@@ -23,10 +82,173 @@ class GithubVCSP(VCSPInterface):
         except GithubException as e:
             raise Exception(f"Failed to get GitHub PR {pr_number} in {repo_name}: {str(e)}")
 
-    def get_files_in_pr(self, repo_name: str, pr_number: int):
+    def get_last_ai_review_time(self, repo_name: str, pr_number: int):
+        """Get the timestamp of the last AI review comment."""
+        try:
+            repo = self.client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+            last_time = None
+            
+            # Check review comments
+            for comment in pr.get_review_comments():
+                if "AI Comment:" in comment.body:
+                    comment_time = comment.created_at
+                    if not last_time or comment_time > last_time:
+                        last_time = comment_time
+            
+            # Check issue comments
+            for comment in pr.get_issue_comments():
+                if "AI Comment:" in comment.body:
+                    comment_time = comment.created_at
+                    if not last_time or comment_time > last_time:
+                        last_time = comment_time
+            
+            return last_time
+        except GithubException as e:
+            logger.error(f"Failed to get last AI review time: {str(e)}")
+            return None
+
+    def get_commits_after_time(self, repo_name: str, pr_number: int, since_time):
+        """Get commits in PR after the given time."""
+        try:
+            repo = self.client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+            commits = []
+            
+            for commit in pr.get_commits():
+                commit_time = commit.commit.author.date
+                if commit_time > since_time:
+                    commits.append({
+                        "sha": commit.sha,
+                        "date": commit_time.isoformat()
+                    })
+            
+            return commits
+        except GithubException as e:
+            logger.error(f"Failed to get commits after time: {str(e)}")
+            return []
+
+    def get_commit_diff(self, repo_name: str, commit_hash: str):
+        """Get diff for a specific commit."""
+        try:
+            repo = self.client.get_repo(repo_name)
+            commit = repo.get_commit(commit_hash)
+            
+            files = []
+            for file in commit.files:
+                # Build diff-like text from file patch
+                patch = file.patch or ""
+                if patch:
+                    # Extract changed lines from patch
+                    changed_lines = set()
+                    line_num_new = None
+                    for line in patch.splitlines():
+                        if line.startswith('@@'):
+                            try:
+                                match = re.search(r'\+(\d+)', line)
+                                if match:
+                                    line_num_new = int(match.group(1)) - 1
+                            except Exception:
+                                pass
+                        elif line.startswith('+') and not line.startswith('+++'):
+                            if line_num_new is not None:
+                                line_num_new += 1
+                                changed_lines.add(line_num_new)
+                        elif not line.startswith('-'):
+                            if line_num_new is not None:
+                                line_num_new += 1
+                    files.append(PRFile(file.filename, patch, changed_lines))
+            
+            return files
+        except GithubException as e:
+            logger.error(f"Failed to get commit diff for {commit_hash}: {str(e)}")
+            return []
+
+    def get_pr_diff(self, repo_name: str, pr_number: int):
+        """Get full PR diff."""
         try:
             pr = self.client.get_repo(repo_name).get_pull(pr_number)
-            return [PRFile(file.filename, file.patch) for file in pr.get_files()]
+            files = []
+            for file in pr.get_files():
+                # Extract changed lines from patch if available
+                changed_lines = set()
+                if file.patch:
+                    line_num_new = None
+                    for line in file.patch.splitlines():
+                        if line.startswith('@@'):
+                            try:
+                                match = re.search(r'\+(\d+)', line)
+                                if match:
+                                    line_num_new = int(match.group(1)) - 1
+                            except Exception:
+                                pass
+                        elif line.startswith('+') and not line.startswith('+++'):
+                            if line_num_new is not None:
+                                line_num_new += 1
+                                changed_lines.add(line_num_new)
+                        elif not line.startswith('-'):
+                            if line_num_new is not None:
+                                line_num_new += 1
+                files.append(PRFile(file.filename, file.patch or "", changed_lines))
+            return files
+        except GithubException as e:
+            logger.error(f"Failed to get PR diff: {str(e)}")
+            return []
+
+    def get_files_in_pr(self, repo_name: str, pr_number: int):
+        """Get files in PR, but only new changes if there was a previous AI review."""
+        try:
+            last_review_time = self.get_last_ai_review_time(repo_name, pr_number)
+
+            if last_review_time:
+                commits = self.get_commits_after_time(repo_name, pr_number, last_review_time)
+                if not commits:
+                    logger.info("No new commits after last AI review.")
+                    return []
+
+                per_commit_diffs = []
+                for commit in commits:
+                    commit_diff = self.get_commit_diff(repo_name, commit["sha"])
+                    per_commit_diffs.append(commit_diff)
+
+                # Conflict detection - merge diffs for same files
+                merged = defaultdict(lambda: {"diff": [], "lines": set()})
+                conflict_files = set()
+
+                for commit_diff in per_commit_diffs:
+                    for pr_file in commit_diff:
+                        if pr_file.filename in merged:
+                            if merged[pr_file.filename]["lines"] & pr_file.lines:
+                                conflict_files.add(pr_file.filename)
+                        merged[pr_file.filename]["diff"].append(pr_file)
+                        if pr_file.lines:
+                            merged[pr_file.filename]["lines"].update(pr_file.lines)
+
+                # Final output
+                final_files = []
+                full_pr_diff = None  # lazy load
+                for filename, group in merged.items():
+                    if filename in conflict_files:
+                        # Use full PR diff for conflicting files
+                        if full_pr_diff is None:
+                            full_pr_diff = {f.filename: f for f in self.get_pr_diff(repo_name, pr_number)}
+                        if filename in full_pr_diff:
+                            final_files.append(full_pr_diff[filename])
+                        else:
+                            logger.warning("Conflict file %s not found in PR diff", filename)
+                    else:
+                        # Merge patches from multiple commits for same file
+                        patches = [f.patch for f in group["diff"] if f.patch]
+                        if patches:
+                            # Combine patches (simple concatenation, could be improved)
+                            combined_patch = "\n".join(patches)
+                            final_files.append(PRFile(filename, combined_patch, group["lines"]))
+
+                return final_files
+            else:
+                # No AI review, return full PR diff
+                logger.info("No previous AI comment found, taking full PR diff.")
+                return self.get_pr_diff(repo_name, pr_number)
         except GithubException as e:
             raise Exception(f"Failed to get files in GitHub PR {pr_number}: {str(e)}")
 
