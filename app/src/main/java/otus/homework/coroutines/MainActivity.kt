@@ -14,14 +14,14 @@ class MainActivity : AppCompatActivity() {
 
     private val viewModel by viewModels<CatsViewModel>()
 
-    private lateinit var button: Button
-    private lateinit var textView: TextView
     private lateinit var imgView: ImageView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        button = findViewById(R.id.button)
+        textView = findViewById(R.id.fact_textView)
         imgView = findViewById(R.id.random_imgView)
 
         viewModel.onInitComplete()
