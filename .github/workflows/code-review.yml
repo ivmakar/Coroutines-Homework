@@ -31,4 +31,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          python tools/review.py ${{ github.repository }} ${{ github.event.pull_request.number }} --mode issues --llm gemini
+          python tools/review.py ${{ github.repository }} ${{ github.event.pull_request.number }} --mode issues --llm gemini --debug
