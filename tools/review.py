@@ -41,6 +41,12 @@ parser.add_argument(
     nargs="+",
     help="LLM to use (one or more): 'chatgpt', 'gemini', 'grok' (default: chatgpt)",
 )
+parser.add_argument(
+    "--model",
+    type=str,
+    default=None,
+    help="Model name to use for the LLM (overrides environment variables). Applied to all specified LLMs. Examples: 'gpt-4o', 'gpt-4-turbo', 'gemini-2.0-flash', 'grok-3-mini'. If not specified, uses OPENAI_MODEL/GEMINI_MODEL/GROK_MODEL env vars or defaults.",
+)
 
 parser.add_argument(
     "--deep",
@@ -93,7 +99,8 @@ llm_map = {
 
 for i in range(len(args.llm)):
     try:
-        llm = llm_map[args.llm[i]]()
+        # Pass model parameter if specified
+        llm = llm_map[args.llm[i]](model=args.model)
     except ValueError as e:
         logging.error(f"Failed to initialize LLM: {str(e)}")
         continue
@@ -128,6 +135,12 @@ for i in range(len(args.llm)):
     # Get the review
     try:
         review_result: LLMReviewResult = reviewer.review_pr(pr, args.repository, args.pr_number)
+    except ValueError as e:
+        # Parsing errors from LLM response
+        logging.error(f"Failed to parse LLM response: {str(e)}")
+        if "parsing" in str(e).lower() or "json" in str(e).lower():
+            logging.error("The LLM returned an invalid response format. Please try again.")
+        continue
     except Exception as e:
         logging.error(f"Failed to generate review: {str(e)}")
         continue

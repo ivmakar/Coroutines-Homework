@@ -6,12 +6,13 @@ from config import LOG_CHAR_LIMIT
 
 
 class GeminiLLM(LLMInterface):
-    def __init__(self):
+    def __init__(self, model: str = None):
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable is required for Gemini")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-2.0-flash"))
+        model_name = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+        self.model = genai.GenerativeModel(model_name)
 
     def answer(self, system_prompt: str, user_prompt: str, content: str) -> ModelResult:
         """Generate a response for the given prompts and content."""

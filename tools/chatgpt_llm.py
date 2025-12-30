@@ -6,12 +6,12 @@ from llm_interface import LLMInterface, ModelResult
 from config import LOG_CHAR_LIMIT
 
 class ChatGPTLLM(LLMInterface):
-    def __init__(self):
+    def __init__(self, model: str = None):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY environment variable is required for ChatGPT")
         self.client = openai.OpenAI(api_key=api_key)
-        self.model = os.getenv("OPENAI_MODEL", "gpt-4o")
+        self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o")
 
     def answer(self, system_prompt: str, user_prompt: str, content: str) -> ModelResult:
         """Generate a JSON response for the given prompts and content."""

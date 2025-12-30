@@ -137,12 +137,23 @@ class LLMCodeReviewer:
                 cleaned_response = self.json_cleaner.strip(llm_answer.response)
                 logging.debug(f"Cleaned Response:\n{cleaned_response[:LOG_CHAR_LIMIT]}... (truncated)")
                 if not cleaned_response:
-                    logging.error("Error: No valid JSON found in LLM response")
-                    return None
+                    error_msg = "Error: No valid JSON found in LLM response"
+                    logging.error(error_msg)
+                    raise ValueError(error_msg)
                 try:
                     review_result = LLMReviewResult.from_json(cleaned_response, 
                         llm_answer.total_tokens,llm_answer.prompt_tokens, llm_answer.completion_tokens)                
                     return review_result
                 except ValueError as e:
-                    logging.error(f"Error parsing LLM response: {str(e)}")
+                    error_msg = f"Error parsing LLM response: {str(e)}"
+                    logging.error(error_msg)
+                    # Log the cleaned response for debugging if it's not too long
+                    if len(cleaned_response) < LOG_CHAR_LIMIT * 2:
+                        logging.error(f"Failed to parse response: {cleaned_response}")
+                    raise ValueError(error_msg) from e
+            
+            # No LLM answer and no files to review
+            if all_content_length == 0:
+                logging.info("No files to review (empty diff or no new changes)")
+                return None
             return None
