@@ -328,7 +328,19 @@ class GithubVCSP(VCSPInterface):
                 logger.warning(f"Could not determine correct line number: {str(e)}, using line {line}")
             
             print(f"Posting comment on {file_path} at position {actual_line} in commit {commit}")
-            pr.create_review_comment(comment, commit_obj, file_path, actual_line)
+            # Use direct API call to specify side="RIGHT" to show new code instead of old
+            # The create_review_comment method doesn't support side parameter directly
+            url = f"/repos/{repo_name}/pulls/{pr.number}/comments"
+            data = {
+                "body": comment,
+                "commit_id": commit,
+                "path": file_path,
+                "line": actual_line,
+                "side": "RIGHT"  # RIGHT = new code (changed lines), LEFT = old code
+            }
+            # Use the requester from the Github client to make the API call
+            requester = self.client._Github__requester
+            requester.requestJsonAndCheck("POST", url, input=data)
             return True
         except GithubException as e:
             error_msg = str(e)

@@ -190,21 +190,8 @@ for i in range(len(args.llm)):
             if review.comments and (review.bug_count != 0 or review.smell_count != 0 or
                 review.optimization_count != 0 or review.logical_errors != 0 or
                 review.performance_issues != 0):
-                lines = ["AI Comment:"] + review.comments
-
-                # add any non-zero counts
-                if review.bug_count:
-                    lines.append(f"    bugCount={review.bug_count}")
-                if review.smell_count:
-                    lines.append(f"    smellCount={review.smell_count}")
-                if review.optimization_count:
-                    lines.append(f"    optimizationCount={review.optimization_count}")
-                if review.logical_errors:
-                    lines.append(f"    logicalErrors={review.logical_errors}")
-                if review.performance_issues:
-                    lines.append(f"    performanceIssues={review.performance_issues}")
-
-                comment = "\n".join(lines)
+                # Use only the comments without prefix or metadata
+                comment = "\n".join(review.comments)
                 try:
                     vcsp.create_review_comment(
                         repo_name=args.repository,
