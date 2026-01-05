@@ -35,6 +35,7 @@ def get_prompt(deep: bool = False) -> str:
             "Use the PR description to understand the intent and do not flag issues if the PR description explains the reasoning behind a change, unless the change introduces a clear bug. "
             f"{base_json_schema} "
             "For each file, include specific issues or suggestions in the 'comments' array, referencing the modified lines."
+            "Write all the issues in Russian."
         )
     else:
         return (
@@ -43,4 +44,5 @@ def get_prompt(deep: bool = False) -> str:
             "Do not provide general suggestions or speculative concerns. "
             f"{base_json_schema} "
             "For each file, include only critical bugs in the 'comments' array, referencing the modified lines."
+            "Write all the issues in Russian."
         )
