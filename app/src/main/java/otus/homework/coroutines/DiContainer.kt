@@ -27,14 +27,6 @@ class DiContainer {
             .build()
     }
 
-    private val imgRetrofit by lazy {
-        Retrofit.Builder()
-            .client(okHttpClient)
-            .baseUrl("https://dog.ceo/api/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
 
     val catsService by lazy { catsRetrofit.create(CatsService::class.java) }
 
