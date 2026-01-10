@@ -230,6 +230,16 @@ class GitlabVCSP(VCSPInterface):
         except GitlabGetError as e:
             raise Exception(f"Failed to get file content for {file_path} in {repo_name}: {str(e)}")
 
+    def create_issue_comment(self, repo_name: str, pr_number: int, comment: str):
+        """Create a general comment on a merge request."""
+        try:
+            project = self.client.projects.get(repo_name)
+            mr = project.mergerequests.get(pr_number)
+            mr.notes.create({'body': comment})
+            return True
+        except GitlabCreateError as e:
+            raise Exception(f"Failed to create GitLab issue comment: {str(e)}")
+
     def create_review_comment(self, repo_name: str, commit: str, file_path: str, line: int, comment: str, side: str):
         try:
             project = self.client.projects.get(repo_name)
@@ -239,22 +249,18 @@ class GitlabVCSP(VCSPInterface):
                 raise Exception(f"No merge request found for commit {commit}")
             mr_id = mrs[0]['iid']  # Get the ID of the first merge request
             mr = project.mergerequests.get(mr_id)  # Fetch the merge request object
-            if file_path != "":
-                # Create a discussion with a position-based comment
-                mr.discussions.create({
-                    'body': comment,
-                    'position': {
-                        'base_sha': mr.diff_refs['base_sha'],
-                        'start_sha': mr.diff_refs['start_sha'],
-                        'head_sha': mr.diff_refs['head_sha'],
-                        'position_type': 'text',
-                        'new_path': file_path,
-                        'new_line': line
-                    }
-                })
-            else:
-                # Create a comment on the merge request
-                mr.notes.create({'body': comment})
+            # Create a discussion with a position-based comment
+            mr.discussions.create({
+                'body': comment,
+                'position': {
+                    'base_sha': mr.diff_refs['base_sha'],
+                    'start_sha': mr.diff_refs['start_sha'],
+                    'head_sha': mr.diff_refs['head_sha'],
+                    'position_type': 'text',
+                    'new_path': file_path,
+                    'new_line': line
+                }
+            })
 
             return True
         except GitlabCreateError as e:

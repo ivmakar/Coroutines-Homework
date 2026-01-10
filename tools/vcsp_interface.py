@@ -39,6 +39,11 @@ class VCSPInterface(ABC):
         pass
 
     @abstractmethod
+    def create_issue_comment(self, repo_name: str, pr_number: int, comment: str):
+        """Create a general comment on a pull request (issue comment)."""
+        pass
+
+    @abstractmethod
     def get_commit(self, repo_name: str, commit_sha: str):
         """Retrieve a commit by its SHA."""
         pass

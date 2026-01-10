@@ -182,14 +182,11 @@ for i in range(len(args.llm)):
         comments_posted = False
         
         if args.add_statistic_info:
-            vcsp.create_review_comment(
-                            repo_name=args.repository,
-                            comment=review_result.get_overall_review(args.deep, args.full_context, args.llm[i]),                        
-                            file_path="",
-                            line=0,
-                            commit=head_commit.sha,
-                            side="RIGHT"
-                        )
+            vcsp.create_issue_comment(
+                repo_name=args.repository,
+                pr_number=args.pr_number,
+                comment=review_result.get_overall_review(args.deep, args.full_context, args.llm[i])
+            )
         
         # Post comments for reviews with errors
         if review_result.reviews:
@@ -217,13 +214,10 @@ for i in range(len(args.llm)):
         if not comments_posted:
             try:
                 no_issues_message = "Нет замечаний от AI"
-                vcsp.create_review_comment(
+                vcsp.create_issue_comment(
                     repo_name=args.repository,
-                    comment=no_issues_message,
-                    file_path="",
-                    line=0,
-                    commit=head_commit.sha,
-                    side="RIGHT",
+                    pr_number=args.pr_number,
+                    comment=no_issues_message
                 )
                 logging.info("Posted comment: No issues found by AI")
             except Exception as e:
