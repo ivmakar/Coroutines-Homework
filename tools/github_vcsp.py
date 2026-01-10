@@ -263,6 +263,16 @@ class GithubVCSP(VCSPInterface):
         except GithubException as e:
             raise Exception(f"Failed to get file content for {file_path} in {repo_name}: {str(e)}")
 
+    def create_issue_comment(self, repo_name: str, pr_number: int, comment: str):
+        """Create a general comment on a pull request (issue comment)."""
+        try:
+            repo = self.client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+            pr.create_issue_comment(comment)
+            return True
+        except GithubException as e:
+            raise Exception(f"Failed to create GitHub issue comment: {str(e)}")
+
     def create_review_comment(self, repo_name: str, commit: str, file_path: str, line: int, comment: str, side: str):
         try:
             repo = self.client.get_repo(repo_name)
@@ -271,11 +281,6 @@ class GithubVCSP(VCSPInterface):
             if not prs.totalCount:
                 raise Exception(f"No pull request found for commit {commit} in {repo_name}")
             pr = prs[0]
-            
-            # If file_path is empty, create issue comment
-            if file_path == "":
-                pr.create_issue_comment(comment)
-                return True
             
             # For inline comments, we need to find the correct line number in the PR diff
             # The line number from LLM might not match the actual file due to diff context
@@ -328,7 +333,19 @@ class GithubVCSP(VCSPInterface):
                 logger.warning(f"Could not determine correct line number: {str(e)}, using line {line}")
             
             print(f"Posting comment on {file_path} at position {actual_line} in commit {commit}")
-            pr.create_review_comment(comment, commit_obj, file_path, actual_line)
+            # Use direct API call to specify side="RIGHT" to show new code instead of old
+            # The create_review_comment method doesn't support side parameter directly
+            url = f"/repos/{repo_name}/pulls/{pr.number}/comments"
+            data = {
+                "body": comment,
+                "commit_id": commit,
+                "path": file_path,
+                "line": actual_line,
+                "side": "RIGHT"  # RIGHT = new code (changed lines), LEFT = old code
+            }
+            # Use the requester from the Github client to make the API call
+            requester = self.client._Github__requester
+            requester.requestJsonAndCheck("POST", url, input=data)
             return True
         except GithubException as e:
             error_msg = str(e)
@@ -349,7 +366,7 @@ class GithubVCSP(VCSPInterface):
                     if prs.totalCount > 0:
                         pr = prs[0]
                         fallback_comment = f"**AI Comment on {file_path} (near line {line}):**\n\n{comment}"
-                        pr.create_issue_comment(fallback_comment)
+                        self.create_issue_comment(repo_name, pr.number, fallback_comment)
                         logger.info(f"Created fallback issue comment instead of inline comment")
                         return True
                 except Exception as fallback_error:

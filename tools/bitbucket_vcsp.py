@@ -225,6 +225,28 @@ class BitbucketVCSP(VCSPInterface):
             return None
         return SimpleNamespace(decoded_content=text.encode('utf-8'))
 
+    def create_issue_comment(self, repo_name: str, pr_number: int, comment: str):
+        """Create a general comment on a Bitbucket pull request."""
+        url = (
+            f"https://api.bitbucket.org/2.0/repositories/"
+            f"{self.workspace}/{repo_name}/pullrequests/{pr_number}/comments"
+        )
+        payload = {
+            "content": {"raw": comment}             
+        }
+        try:
+            response = requests.post(url, json=payload, auth=(self.bb_user, self.bb_pass))
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            status = e.response.status_code if e.response else 'N/A'
+            text = e.response.text if e.response else str(e)
+            logger.error(
+                "Failed to post issue comment to %s #%s: status %s, response: %s",
+                repo_name, pr_number, status, text
+            )
+            raise
+
     def create_review_comment(self, repo_name: str, commit: str, file_path: str, line: int, comment: str, side: str):
         """
         Post a review comment on a Bitbucket pull request via REST API.
@@ -233,16 +255,10 @@ class BitbucketVCSP(VCSPInterface):
             f"https://api.bitbucket.org/2.0/repositories/"
             f"{self.workspace}/{repo_name}/pullrequests/{self.pr_number}/comments"
         )
-        payload = None
-        if file_path != "":
-            payload = {
-                "content": {"raw": comment},
-                "inline": {"path": file_path, "to": line}
-            }
-        else:
-            payload = {
-                "content": {"raw": comment}             
-            }
+        payload = {
+            "content": {"raw": comment},
+            "inline": {"path": file_path, "to": line}
+        }
         try:
             response = requests.post(url, json=payload, auth=(self.bb_user, self.bb_pass))
             response.raise_for_status()

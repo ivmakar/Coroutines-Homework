@@ -171,52 +171,57 @@ for i in range(len(args.llm)):
         print(review_summary)
                 
 
-    if args.mode == "comments" and pr.state.lower() == "open" and review_result and review_result.reviews:
+    if args.mode == "comments" and pr.state.lower() == "open" and review_result:
         try:
             head_commit = vcsp.get_commit(args.repository, pr.head_sha)
         except Exception as e:
             logging.error(f"Failed to fetch head commit: {str(e)}")
             exit(1)
+        
+        # Track if any error comments were posted
+        comments_posted = False
+        
         if args.add_statistic_info:
-            vcsp.create_review_comment(
+            vcsp.create_issue_comment(
+                repo_name=args.repository,
+                pr_number=args.pr_number,
+                comment=review_result.get_overall_review(args.deep, args.full_context, args.llm[i])
+            )
+        
+        # Post comments for reviews with errors
+        if review_result.reviews:
+            for review in review_result.reviews:
+                if review.comments and (review.bug_count != 0 or review.smell_count != 0 or
+                    review.optimization_count != 0 or review.logical_errors != 0 or
+                    review.performance_issues != 0):
+                    # Use only the comments without prefix or metadata
+                    comment = "\n".join(review.comments)
+                    try:
+                        vcsp.create_review_comment(
                             repo_name=args.repository,
-                            comment=review_result.get_overall_review(args.deep, args.full_context, args.llm[i]),                        
-                            file_path="",
-                            line=0,
+                            comment=comment,
                             commit=head_commit.sha,
-                            side="RIGHT"
+                            file_path=review.file,
+                            line=review.line,
+                            side="RIGHT",
                         )
-        for review in review_result.reviews:
-            if review.comments and (review.bug_count != 0 or review.smell_count != 0 or
-                review.optimization_count != 0 or review.logical_errors != 0 or
-                review.performance_issues != 0):
-                lines = ["AI Comment:"] + review.comments
-
-                # add any non-zero counts
-                if review.bug_count:
-                    lines.append(f"    bugCount={review.bug_count}")
-                if review.smell_count:
-                    lines.append(f"    smellCount={review.smell_count}")
-                if review.optimization_count:
-                    lines.append(f"    optimizationCount={review.optimization_count}")
-                if review.logical_errors:
-                    lines.append(f"    logicalErrors={review.logical_errors}")
-                if review.performance_issues:
-                    lines.append(f"    performanceIssues={review.performance_issues}")
-
-                comment = "\n".join(lines)
-                try:
-                    vcsp.create_review_comment(
-                        repo_name=args.repository,
-                        comment=comment,
-                        commit=head_commit.sha,
-                        file_path=review.file,
-                        line=review.line,
-                        side="RIGHT",
-                    )
-                    logging.info(f"Posted comment on {review.file} at line {review.line}")
-                except Exception as e:
-                    logging.error(f"Error posting comment on {review.file}: {str(e)}")
+                        comments_posted = True
+                        logging.info(f"Posted comment on {review.file} at line {review.line}")
+                    except Exception as e:
+                        logging.error(f"Error posting comment on {review.file}: {str(e)}")
+        
+        # If no error comments were posted, create a general comment saying no issues found
+        if not comments_posted:
+            try:
+                no_issues_message = "Нет замечаний от AI"
+                vcsp.create_issue_comment(
+                    repo_name=args.repository,
+                    pr_number=args.pr_number,
+                    comment=no_issues_message
+                )
+                logging.info("Posted comment: No issues found by AI")
+            except Exception as e:
+                logging.error(f"Error posting 'no issues' comment: {str(e)}")
     elif args.mode == "comments":
         logging.info("Comments mode: PR is closed, no comments posted.")
     break
